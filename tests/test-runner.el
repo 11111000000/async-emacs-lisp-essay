@@ -1,5 +1,8 @@
 ;; -*- lexical-binding: t; -*-
 ;;; test-runner.el --- Batch runner for ERT tests
+;; SPDX-License-Identifier: GPL-3.0-or-later
+;; Author: Peter Kosov <11111000000@email.com>
+;; Copyright (c) 2025 Peter Kosov <11111000000@email.com>
 
 (setq debug-on-error t)
 (let ((dir (file-name-directory (or load-file-name buffer-file-name))))

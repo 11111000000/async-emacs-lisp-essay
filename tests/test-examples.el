@@ -1,5 +1,8 @@
 ;; -*- lexical-binding: t; -*-
 ;;; test-examples.el --- ERT tests for async Emacs Lisp examples
+;; SPDX-License-Identifier: GPL-3.0-or-later
+;; Author: Peter Kosov <11111000000@email.com>
+;; Copyright (c) 2025 Peter Kosov <11111000000@email.com>
 
 (require 'ert)
 (require 'cl-lib)

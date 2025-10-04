@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Author: Peter Kosov <11111000000@email.com>
+# Copyright (c) 2025 Peter Kosov <11111000000@email.com>
 {
   description = "ERT tests for async Emacs Lisp examples (nix flake)";
 
