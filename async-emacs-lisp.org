@@ -76,7 +76,7 @@ flowchart TD
 
 Диаграмма жизненного цикла процесса:
 
-#+begin_src mermaid
+#+begin_src mermaid  :file diagram2.png
 sequenceDiagram
   participant E as Emacs (главный поток)
   participant P as Внешний процесс
@@ -86,6 +86,9 @@ sequenceDiagram
   P-->>E: завершение (sentinel p ev)
   E->>E: cleanup ресурсов, UI через run-at-time 0
 #+end_src
+
+#+RESULTS:
+[[file:diagram2.png]]
 
 *** Таймеры: run-at-time и run-with-idle-timer
 
@@ -99,7 +102,7 @@ run-at-time запускает колбэк через заданное врем
 (run-with-idle-timer 3 t (lambda () (message "пинг в простое")))
 #+end_src
 
-#+begin_src mermaid
+#+begin_src mermaid :file diagram3.png
 sequenceDiagram
   participant E as Emacs
   E->>E: run-at-time delay repeat cb
@@ -107,6 +110,9 @@ sequenceDiagram
   E-->>E: cb исполняется в точках ожидания
   Note over E: Пропущенные тики не накапливаются
 #+end_src
+
+#+RESULTS:
+[[file:diagram3.png]]
 
 *** Потоки Emacs Lisp: кооперативная координация
 
@@ -264,8 +270,9 @@ async.el запускает вычисления в отдельном проц�
            (progn
              ;; Текущий буфер — буфер ответа
              (goto-char (point-min))
-             (when (boundp 'url-http-end-of-headers)
-               (goto-char url-http-end-of-headers))
+             (if (and (boundp 'url-http-end-of-headers) url-http-end-of-headers)
+                 (goto-char url-http-end-of-headers)
+               (re-search-forward "\r?\n\r?\n" nil t))
              (let ((body (buffer-substring-no-properties (point) (point-max))))
                (message "Получено %d байт (учтите: 4xx/5xx — не транспортная ошибка)" (length body))))
          ;; Обязательно закрыть буфер
@@ -279,6 +286,7 @@ async.el запускает вычисления в отдельном проц�
 
 #+begin_src elisp
 ;; -*- lexical-binding: t; -*-
+(require 'async)
 (let ((running nil))
   (run-at-time
    2 5
@@ -322,37 +330,41 @@ read-process-output-max (с Emacs 27+) определяет максимальн
        (proc nil))
   ;; Временно увеличим лимит чтения; восстановим в sentinel
   (setq read-process-output-max (* 512 1024))
-  (setq proc
-        (make-process
-         :name "long-cat"
-         :buffer buf
-         :command (list (or (executable-find "bash") "/nix/store/...-bash/bin/bash")
-                        "-lc"
-                        "yes 'data line' | head -n 200000")
-         :noquery t
-         :connection-type 'pipe
-         :coding 'utf-8
-         :filter (lambda (p chunk)
-                   (condition-case err
-                       (when (buffer-live-p buf)
-                         (with-current-buffer buf
-                           ;; Отключим undo для потокового буфера
-                           (setq buffer-undo-list t)
-                           (goto-char (point-max))
-                           (insert chunk)
-                           ;; Backpressure: если буфер разросся — обрежем начало
-                           (when (> (buffer-size) max-size)
-                             (save-excursion
-                               (goto-char (- (point-max) max-size))
-                               (delete-region (point-min) (point))))))
-                     (error (message "[%s filter err] %S" (process-name p) err))))
-         :sentinel (lambda (p ev)
-                     (when (memq (process-status p) '(exit signal))
-                       (message "[%s] %s" (process-name p) (string-trim ev))
-                       (when (buffer-live-p buf)
-                         (kill-buffer buf))
-                       ;; Восстановим глобальный лимит
-                       (setq read-process-output-max old-rpom)))))
+  (condition-case err
+      (setq proc
+            (make-process
+             :name "long-cat"
+             :buffer buf
+             :command (list (or (executable-find "bash") "/nix/store/...-bash/bin/bash")
+                            "-lc"
+                            "yes 'data line' | head -n 200000")
+             :noquery t
+             :connection-type 'pipe
+             :coding 'utf-8
+             :filter (lambda (p chunk)
+                       (condition-case err
+                           (when (buffer-live-p buf)
+                             (with-current-buffer buf
+                               ;; Отключим undo для потокового буфера
+                               (setq buffer-undo-list t)
+                               (goto-char (point-max))
+                               (insert chunk)
+                               ;; Backpressure: если буфер разросся — обрежем начало
+                               (when (> (buffer-size) max-size)
+                                 (save-excursion
+                                   (goto-char (- (point-max) max-size))
+                                   (delete-region (point-min) (point))))))
+                         (error (message "[%s filter err] %S" (process-name p) err))))
+             :sentinel (lambda (p ev)
+                         (when (memq (process-status p) '(exit signal))
+                           (message "[%s] %s" (process-name p) (string-trim ev))
+                           (when (buffer-live-p buf)
+                             (kill-buffer buf))
+                           ;; Восстановим глобальный лимит
+                           (setq read-process-output-max old-rpom)))))
+    (error
+     (setq read-process-output-max old-rpom)
+     (signal (car err) (cdr err))))
   proc)
 #+end_src
 
@@ -428,7 +440,7 @@ TIME/REPEAT — как в run-at-time. CALLBACK получает результ�
            (lambda ()
              (when (or (not coalesce) (not running))
                (setq running t)
-               (condition-case perr
+               (condition-case _
                    (async-start
                     `(lambda ()
                        (condition-case err
@@ -592,7 +604,7 @@ request.el — популярная библиотека с промисами/�
 
 ** Ошибки, отладка, тестирование асинхронного кода
 
-В фильтрах/сентинелах/таймерах ошибки по умолчанию не «прокалываются» вверх по стеку вызовов. В разработке включайте (setq debug-on-error t), используйте condition-case в обработчиках и логируйте ошибки в /Messages/ или собственный лог. Для тестирования удобно сочетать ert, with-timeout и accept-process-output: вы запускаете процесс, ждёте события и проверяете инварианты. Помните: accept-process-output внутри исполняет фильтры/таймеры.
+В фильтрах/сентинелах/таймерах ошибки по умолчанию не «проталкиваются» вверх по стеку вызовов. В разработке включайте (setq debug-on-error t), используйте condition-case в обработчиках и логируйте ошибки в /Messages/ или собственный лог. Для тестирования удобно сочетать ert, with-timeout и accept-process-output: вы запускаете процесс, ждёте события и проверяете инварианты. Помните: accept-process-output внутри исполняет фильтры/таймеры.
 
 #+begin_src elisp
 ;; -*- lexical-binding: t; -*-
@@ -613,9 +625,10 @@ request.el — популярная библиотека с промисами/�
                             (when (memq (process-status p) '(exit signal))
                               (setq done t))))))
     (unwind-protect
-        (with-timeout (2 (should nil)) ; таймаут — тест провален
+        (with-timeout (2 (ert-fail "timeout")) ; таймаут — тест провален
           (while (not done)
             (accept-process-output proc 0.05)))
+      (when (and proc (process-live-p proc)) (delete-process proc))
       (when (buffer-live-p buf) (kill-buffer buf)))
     (should done)))
 #+end_src
