@@ -24,6 +24,7 @@
           bash
           coreutils  # printf, yes, head, du, uname, etc.
           ripgrep
+          curl
         ];
 
         PATH = pkgs.lib.makeBinPath tools;

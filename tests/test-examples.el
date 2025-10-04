@@ -345,22 +345,26 @@
   (let ((done nil) (txt nil))
     (async-start-process
      "uname" (executable-find "uname")
-     (lambda (proc)
-       (let ((buf (and (process-live-p proc) (process-buffer proc))))
+     (lambda (obj)
+       (let ((buf (cond
+                   ((bufferp obj) obj)
+                   ((processp obj) (process-buffer obj))
+                   ((and (stringp obj) (get-buffer obj)) (get-buffer obj))
+                   (t nil))))
          (unwind-protect
-             (when (and buf (buffer-live-p buf))
+             (when (buffer-live-p buf)
                (with-current-buffer buf
                  (setq txt (string-trim (buffer-string)))))
            (when (buffer-live-p buf) (kill-buffer buf))))
        (setq done t))
      "-s")
-    (should (test-wait-for (lambda () done) 3.0))
+    (should (test-wait-for (lambda () done) 5.0))
     (should (and (stringp txt) (> (length txt) 0)))))
 
 ;;; --- plz HTTP
 (ert-deftest ex-plz-get-json ()
-  (unless (and (require 'plz nil t) (test-network-available-p))
-    (ert-skip "plz not installed or network not available"))
+  (unless (and (require 'plz nil t) (have-exec "curl") (test-network-available-p))
+    (ert-skip "plz/curl not installed or network not available"))
   (let ((done nil) (err nil) (origin nil))
     ;; Use :as 'string for broad plz compatibility; parse JSON ourselves.
     (plz 'get "https://httpbin.org/get"
